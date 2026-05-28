@@ -54,18 +54,15 @@ class CacheEnv(object):
 
         if action == 1:
 
-            if len((self.last_content))>=5:
-                replace_content = random.sample(list(self.last_content), 5)
-                count = 0
-                if count < 5:
-                    self.state[-count - 1] = replace_content[count]
-                    count += 1
-            else:
-                replace_content = self.last_content
-            count = 0
-            if count < 5:
-                self.state[-count-1]=replace_content[count]
-                count+=1
+            # Phase 4a: FL-guided eviction.
+            # last_content is ordered by FL popularity (most popular first).
+            # Select top-N uncached items rather than random candidates.
+            # Fix: use a for-loop so all N items are actually replaced
+            # (original code used `if count < 5` which ran exactly once).
+            n_replace = min(5, len(self.last_content))
+            replace_content = self.last_content[:n_replace]
+            for count in range(n_replace):
+                self.state[-count - 1] = replace_content[count]
 
             state1 = []
             for i in range(len(self.popular_content)):
