@@ -1,5 +1,6 @@
 import copy
 import time
+import math
 import numpy as np
 from tqdm import tqdm
 import torch
@@ -196,7 +197,10 @@ if __name__ == '__main__':
             request_delay_list = []
             for i in range(len(cache_size)):
                 c_s=cache_size[i]
-                MAX_EPISODES = 30
+                # Phase 4c fix: scale training episodes with sqrt(c_s/50) so
+                # larger cache sizes (higher-dim shared state) get enough samples
+                # to converge.  CS=50→30, CS=100→42, CS=200→60, CS=400→85.
+                MAX_EPISODES = max(30, int(30 * math.sqrt(c_s / 50)))
                 MAX_STEPS = 200
                 BATCH_SIZE = 32
                 recommend_movies_c500 = []

@@ -144,11 +144,25 @@ class CacheEnv(object):
     # ------------------------------------------------------------------
 
     def get_shared_state(self):
-        """Return concatenation of RSU1 and RSU2 caches (length 2*cache_size).
-        Padded with 0 if either cache has fewer than cache_size items.
-        Both agents observe this shared state to enable coordination."""
-        s1 = list(self.state)  + [0] * max(0, self.cache_size - len(self.state))
-        s2 = list(self.state2) + [0] * max(0, self.cache_size - len(self.state2))
+        """Return normalised shared state for MARL agents (length 2*cache_size).
+
+        Each cached item is encoded as its popularity rank divided by the total
+        number of candidate items, giving values in [0, 1] where:
+            0.0 = most popular item in popular_content
+            1.0 = least popular item in popular_content
+
+        Using raw movie IDs (range 1-3883) as input to a 128-unit DQN produces
+        poor gradient scaling and slow convergence, especially at large cache sizes
+        where the shared state has 800 dimensions. Rank normalisation fixes this.
+        Missing entries (padding) are set to 1.0 (least-popular sentinel).
+        """
+        n = max(1, len(self.popular_content) - 1)
+        pop_rank = {item: i / n for i, item in enumerate(self.popular_content)}
+
+        s1 = [pop_rank.get(item, 1.0) for item in self.state] + \
+             [1.0] * max(0, self.cache_size - len(self.state))
+        s2 = [pop_rank.get(item, 1.0) for item in self.state2] + \
+             [1.0] * max(0, self.cache_size - len(self.state2))
         return s1 + s2
 
     def step_marl(self, action1, action2, request_dataset, v2i_rate, v2i_rate_mbs,

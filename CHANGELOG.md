@@ -35,8 +35,62 @@ Each entry maps to a git commit and a results file.
 
 ---
 
-## Phase 4c — Two-Agent Cooperative Dueling DQN
+## Phase 4c v2 — Two-Agent Cooperative Dueling DQN (convergence fixed)
 **Status:** Complete
+**Files changed:** `environment.py`, `ce_cs.py`
+**Builds on:** Phase 4c v1 — two additional convergence fixes applied
+**Results file:** `results_phase4c_v2.log`
+
+### Fixes applied over v1
+1. **State normalisation** (`environment.py` `get_shared_state()`):
+   Raw movie IDs (1–3883) replaced with popularity rank / (N−1) → values in [0, 1].
+   Fixes gradient scaling for the 800-dim shared state at CS=400.
+2. **Adaptive MAX_EPISODES** (`ce_cs.py`):
+   `MAX_EPISODES = max(30, int(30 * math.sqrt(c_s / 50)))`
+   CS=50→30, CS=100→42, CS=200→60, CS=400→**85** episodes.
+   Ensures sufficient replay-buffer samples at large cache sizes.
+
+### MCAF Cache Hit Rate (%) — Phase 4c v2 full results
+| CS  | MCAF  | ε-Greedy | Thompson S. | Random | vs Baseline | vs Greedy |
+|-----|-------|----------|-------------|--------|-------------|-----------|
+| 50  | 13.49 | 10.44    | 6.18        | 0.68   | +0.91       | +3.04     |
+| 100 | 22.76 | 21.07    | 15.15       | 3.17   | +2.10       | +1.69     |
+| 150 | 31.05 | 29.31    | 22.23       | 4.22   | +2.10       | +1.73     |
+| 200 | 36.93 | 36.39    | 29.01       | 5.12   | +2.62       | +0.54     |
+| 250 | 42.28 | 41.30    | 34.89       | 6.10   | +2.32       | +0.97     |
+| 300 | 48.30 | 45.74    | 42.65       | 7.76   | +3.05       | +2.56     |
+| 350 | 54.86 | 50.86    | 49.74       | 8.74   | +4.04       | +4.00     |
+| 400 | 59.23 | 56.06    | 55.09       | 10.55  | +2.98       | **+3.17** |
+
+### CS=400 convergence: v1 → v2 comparison
+| Metric              | v1 (no fixes) | v2 (both fixes) | Improvement |
+|---------------------|---------------|-----------------|-------------|
+| MCAF hit rate       | 55.50%        | 59.23%          | +3.73pp     |
+| MCAF vs Greedy gap  | +0.20pp       | +3.17pp         | **+2.97pp** |
+
+CS=400 convergence failure confirmed **resolved**. MARL now outperforms Greedy across
+all 8 cache sizes (50–400).
+
+### Request Delay (ms) — Phase 4c v2 vs Baseline
+| CS  | MCAF  | Baseline | Δ     |
+|-----|-------|----------|-------|
+| 50  | 28.35 | 31.94    | -3.59 |
+| 100 | 26.97 | 30.20    | -3.23 |
+| 150 | 25.68 | 28.44    | -2.76 |
+| 200 | 24.77 | 27.17    | -2.40 |
+| 250 | 23.96 | 26.06    | -2.10 |
+| 300 | 23.05 | 25.09    | -2.04 |
+| 350 | 21.93 | 23.88    | -1.95 |
+| 400 | 21.16 | 22.83    | -1.67 |
+
+Average delay reduction vs baseline: **−2.34 ms** across all cache sizes.
+
+**Commit:** (see git log)
+
+---
+
+## Phase 4c v1 — Two-Agent Cooperative Dueling DQN (original run)
+**Status:** Superseded by v2
 **Files changed:** `environment.py`, `dueling_ddqn.py`, `ce_cs.py`
 **Builds on:** Phase 4a + 4b (all three fixes active in this run)
 **Results file:** `results_phase4c.log`
