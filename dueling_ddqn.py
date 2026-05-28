@@ -11,7 +11,8 @@ import matplotlib.pyplot as plt
 class DuelingAgent:
 
     #buffer size？
-    def __init__(self, env, c_s, learning_rate=0.01, gamma=0.99, buffer_size=10000):
+    def __init__(self, env, c_s, learning_rate=0.01, gamma=0.99, buffer_size=10000,
+                 state_dim=None):
         self.env = env
         self.c_s = c_s
         self.learning_rate = learning_rate
@@ -19,8 +20,11 @@ class DuelingAgent:
         self.replay_buffer = BasicBuffer(max_size=buffer_size)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.model = DuelingDQN(self.c_s, 2).to(self.device)
-      
+        # Phase 4c: state_dim overrides c_s for MARL agents whose input is
+        # the shared state (RSU1 cache + RSU2 cache concatenated = 2*c_s).
+        input_dim = state_dim if state_dim is not None else c_s
+        self.model = DuelingDQN(input_dim, 2).to(self.device)
+
         self.optimizer = torch.optim.Adam(self.model.parameters())
         self.MSE_loss = nn.MSELoss()
 
@@ -175,5 +179,64 @@ def mini_batch_train_density(env, agent, max_episodes, max_steps, batch_size
                 request_delay_list.append(request_delay)
                 break
             state = next_state
+
+    return episode_rewards, cache_efficiency_list, request_delay_list
+
+
+# ------------------------------------------------------------------
+# Phase 4c: Two-agent cooperative training loop
+# ------------------------------------------------------------------
+
+def mini_batch_train_marl(env, agent1, agent2, max_episodes, max_steps, batch_size,
+                          request_dataset, v2i_rate, v2i_rate_mbs,
+                          vehicle_epoch, vehicle_request_num):
+    """Centralised-training decentralised-execution (CTDE) loop.
+
+    Both agents observe the shared state (RSU1 + RSU2 caches concatenated).
+    Each agent independently selects an action for its own RSU.
+    Both agents receive the identical joint delay-minimisation reward,
+    incentivising cooperation: caching duplicate content wastes capacity
+    and reduces RSU2's incremental contribution to the reward.
+
+    agent1 — controls RSU1 (self.state in CacheEnv)
+    agent2 — controls RSU2 (self.state2 in CacheEnv)
+    """
+    episode_rewards     = []
+    cache_efficiency_list  = []
+    request_delay_list  = []
+
+    for episode in range(max_episodes):
+        shared_state   = env.reset_marl()
+        episode_reward = 0
+
+        for step in range(max_steps):
+            action1 = agent1.get_action(shared_state)
+            action2 = agent2.get_action(shared_state)
+
+            next_shared_state, reward, cache_efficiency, cache_efficiency2, request_delay = \
+                env.step_marl(action1, action2, request_dataset, v2i_rate, v2i_rate_mbs,
+                              vehicle_epoch, vehicle_request_num, step)
+
+            # Each agent stores its own (state, action, reward, next_state) tuple.
+            # The reward is shared — this is the cooperative signal.
+            agent1.replay_buffer.push(shared_state, action1, reward, next_shared_state)
+            agent2.replay_buffer.push(shared_state, action2, reward, next_shared_state)
+            episode_reward += reward
+
+            if len(agent1.replay_buffer) % batch_size == 0:
+                agent1.update(batch_size)
+            if len(agent2.replay_buffer) % batch_size == 0:
+                agent2.update(batch_size)
+
+            if step == max_steps - 1:
+                episode_rewards.append(episode_reward)
+                print(f"Episode {episode}: {episode_reward}")
+                cache_efficiency_list.append(cache_efficiency)
+                request_delay_list.append(request_delay)
+                break
+
+            shared_state = next_shared_state
+
+        print(len(agent1.replay_buffer.buffer))
 
     return episode_rewards, cache_efficiency_list, request_delay_list

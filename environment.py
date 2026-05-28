@@ -49,6 +49,18 @@ class CacheEnv(object):
         self.init_cash2 = self.state2.copy()
         self.init_last_content = self.last_content.copy()
 
+        # Phase 4c: sort state2 by popularity (state is already sorted;
+        # original code left state2 as an unsorted random sample).
+        # Then build last_content2 — items not cached by RSU2 — which
+        # gives RSU2 an independent replacement pool for its own agent.
+        self.state2 = [item for item in self.popular_content
+                       if item in self.state2]
+        self.init_cash2 = self.state2.copy()          # overwrite with sorted
+
+        self.last_content2 = [item for item in self.popular_content
+                               if item not in self.state2]
+        self.init_last_content2 = self.last_content2.copy()
+
     def step(self, action, request_dataset, v2i_rate,v2i_rate_mbs, vehicle_epoch, vehicle_request_num, print_step):
         action = np.clip(action, *self.action_bound)
 
@@ -126,6 +138,101 @@ class CacheEnv(object):
 
     def reset(self):
         return self.init_state, self.init_cash2, self.init_last_content
+
+    # ------------------------------------------------------------------
+    # Phase 4c: Multi-Agent RL methods
+    # ------------------------------------------------------------------
+
+    def get_shared_state(self):
+        """Return concatenation of RSU1 and RSU2 caches (length 2*cache_size).
+        Padded with 0 if either cache has fewer than cache_size items.
+        Both agents observe this shared state to enable coordination."""
+        s1 = list(self.state)  + [0] * max(0, self.cache_size - len(self.state))
+        s2 = list(self.state2) + [0] * max(0, self.cache_size - len(self.state2))
+        return s1 + s2
+
+    def step_marl(self, action1, action2, request_dataset, v2i_rate, v2i_rate_mbs,
+                  vehicle_epoch, vehicle_request_num, print_step):
+        """Two-agent cooperative cache step.
+
+        agent1 controls RSU1 (self.state), agent2 controls RSU2 (self.state2).
+        Both agents receive the same joint delay-minimisation reward so that
+        cooperation (avoiding duplicate caching) is incentivised.
+
+        action1/action2 in {0, 1}:
+          0 — keep current cache unchanged
+          1 — replace the 5 least-popular cached items with the 5 most-popular
+              uncached items (FL popularity-guided, Phase 4a policy).
+        """
+        # --- RSU1 replacement (agent1) ---
+        if action1 == 1:
+            n1 = min(5, len(self.last_content))
+            replace1 = self.last_content[:n1]           # top-N uncached by RSU1
+            for count in range(n1):
+                self.state[-count - 1] = replace1[count]
+            self.state = [item for item in self.popular_content
+                          if item in self.state]
+            self.last_content = [item for item in self.popular_content
+                                  if item not in self.state]
+
+        # --- RSU2 replacement (agent2) ---
+        if action2 == 1:
+            n2 = min(5, len(self.last_content2))
+            replace2 = self.last_content2[:n2]          # top-N uncached by RSU2
+            for count in range(n2):
+                self.state2[-count - 1] = replace2[count]
+            self.state2 = [item for item in self.popular_content
+                           if item in self.state2]
+            self.last_content2 = [item for item in self.popular_content
+                                   if item not in self.state2]
+
+        # --- Compute cache efficiencies ---
+        all_vehicle_request_num = sum(vehicle_request_num[vehicle_epoch[i]]
+                                      for i in range(len(vehicle_epoch)))
+
+        cache_efficiency  = cache_hit_ratio(request_dataset, self.state,
+                                            all_vehicle_request_num) / 100
+        # cache_efficiency2 counts RSU2 hits for requests NOT already served by RSU1
+        cache_efficiency2 = cache_hit_ratio2(request_dataset, self.state2,
+                                             self.state, all_vehicle_request_num) / 100
+
+        # --- Joint reward (identical for both agents — cooperative training) ---
+        reward = 0
+        request_delay = 0
+        for i in range(len(vehicle_epoch)):
+            v = vehicle_epoch[i]
+            n = vehicle_request_num[v]
+            r = v2i_rate[v]
+            reward += cache_efficiency  * math.exp(-0.0001 * 8000000 / r) * n
+            reward += cache_efficiency2 * math.exp(-0.0001 * 8000000 / r
+                                                   - 0.4 * 8000000 / 15000000) * n
+            reward += (1 - cache_efficiency - cache_efficiency2) \
+                      * math.exp(-0.5999 * 8000000 / (r / 2)) * n
+
+            request_delay += cache_efficiency  * n / r * 800
+            request_delay += cache_efficiency2 * (n / r + n / 15000000) * 800
+            request_delay += (1 - cache_efficiency - cache_efficiency2) \
+                             * (n / (r / 2)) * 800
+
+        request_delay = request_delay / len(vehicle_epoch) * 1000
+
+        if print_step % 50 == 0:
+            print("---------------------------------------------")
+            print('all_vehicle_request_num', all_vehicle_request_num)
+            print(f'step:{print_step} RSU1 cache_efficiency:{cache_efficiency}')
+            print(f'step:{print_step} RSU2 cache_efficiency:{cache_efficiency2}')
+            print(f'step {print_step} request delay:{request_delay:.6f}')
+            print("---------------------------------------------")
+
+        return self.get_shared_state(), reward, cache_efficiency, cache_efficiency2, request_delay
+
+    def reset_marl(self):
+        """Reset both RSU caches to their initial state and return shared state."""
+        self.state         = self.init_state.copy()
+        self.state2        = self.init_cash2.copy()
+        self.last_content  = self.init_last_content.copy()
+        self.last_content2 = self.init_last_content2.copy()
+        return self.get_shared_state()
 
 class CacheEnv_density(object):
 

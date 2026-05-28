@@ -17,7 +17,7 @@ from Thompson_Sampling import thompson_sampling
 from data_set import convert
 from select_vehicle import select_vehicle, vehicle_p_v, select_vehicle_mobility, vehicle_p_v_mobility, vehicle_p_v_leaving
 from cv2x import V2Ichannels, Environ
-from dueling_ddqn import DuelingAgent, mini_batch_train
+from dueling_ddqn import DuelingAgent, mini_batch_train, mini_batch_train_marl
 from environment import CacheEnv
 
 
@@ -212,14 +212,20 @@ if __name__ == '__main__':
 
                     Oracle_recommend_movies.append(list(Oracle_recommend(test_dataset_i, c_s)))
 
-                # AFPCC
+                # Phase 4c: Two-agent cooperative Dueling DQN.
+                # agent1 controls RSU1, agent2 controls RSU2.
+                # Each agent's input = shared state of size 2*c_s
+                # (RSU1 cache + RSU2 cache concatenated).
                 recommend_movies_c500 = count_top_items(int(2.5*c_s), recommend_movies_c500)
                 env_rl = CacheEnv(recommend_movies_c500, c_s)
-                agent = DuelingAgent(env_rl,c_s)
-                episode_rewards, cache_efficiency, request_delay = mini_batch_train(env_rl, agent, MAX_EPISODES, MAX_STEPS, BATCH_SIZE,
-                                                   request_dataset[idx]
-                                                   , v2i_rate_epoch[idx],v2i_rate_mbs_epoch[idx],
-                                                [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                agent1 = DuelingAgent(env_rl, c_s, state_dim=2*c_s)
+                agent2 = DuelingAgent(env_rl, c_s, state_dim=2*c_s)
+                episode_rewards, cache_efficiency, request_delay = mini_batch_train_marl(
+                                                   env_rl, agent1, agent2,
+                                                   MAX_EPISODES, MAX_STEPS, BATCH_SIZE,
+                                                   request_dataset[idx],
+                                                   v2i_rate_epoch[idx], v2i_rate_mbs_epoch[idx],
+                                                   [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14],
                                                    vehicle_request_num[idx])
                 cache_efficiency_list.append(cache_efficiency[-1]*100)
                 cache_efficiency_without_list.append(cache_efficiency[0]*100)
