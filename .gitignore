@@ -16,3 +16,6 @@ user/
 # Root-level ml-1m/ is a leftover duplicate from Repo 1.
 # The code reads from data/ml-1m/ — that directory is committed.
 ml-1m/
+
+# Large archive — dataset is already extracted into data/ml-1m/
+*.rar
