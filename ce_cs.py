@@ -90,6 +90,11 @@ if __name__ == '__main__':
     each_epoch_time=[]
     each_epoch_time.append(0)
 
+    # Phase 4b: track the last global round each vehicle successfully
+    # trained. Initialised to 0 for all vehicles. Staleness is computed
+    # as (current_round - last_trained_round[v]) at aggregation time.
+    last_trained_round = {i: 0 for i in range(args.clients_num)}
+
     vehicle_leaving=[]
 
     v2i_rate_epoch=dict([(k, []) for k in range(args.epochs)])
@@ -153,8 +158,17 @@ if __name__ == '__main__':
                     if name == name2:
                         param.data.copy_(args.update_decay * param2.data + param.data)
 
+            # Phase 4b: compute staleness for this vehicle and
+            # pass it to the aggregation function.
+            vehicle_id = idx % args.clients_num
+            staleness = idx - last_trained_round[vehicle_id]
+            last_trained_round[vehicle_id] = idx  # update after training
+            print(f'vehicle {vehicle_id} staleness: {staleness} -> alpha: {1.0/(1+staleness):.4f}')
+
             global_w = asy_average_weights(l=vehicle_model_dict[idx % args.clients_num][-1], g=global_model
-                                           , l_old=vehicle_model_dict[idx % args.clients_num][-2],vehicle_all_num=args.clients_num)
+                                           , l_old=vehicle_model_dict[idx % args.clients_num][-2],
+                                           vehicle_all_num=args.clients_num,
+                                           staleness=staleness)
 
             epoch_time = time.time() - epoch_start_time
             each_epoch_time.append(epoch_time)

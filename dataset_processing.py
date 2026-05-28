@@ -306,16 +306,31 @@ def average_weights(w):
         w_avg[key] = torch.div(w_avg[key], len(w))
     return w_avg
 
-def asy_average_weights(l,g,l_old,vehicle_all_num):
+def asy_average_weights(l, g, l_old, vehicle_all_num, staleness=0):
     """
-    Returns the weight.
-    """
-    l_w=l.state_dict()
-    g_w=g.state_dict()
-    l_old_w=l_old.state_dict()
-    for key in g_w.keys():
-        g_w[key]+=1/vehicle_all_num*(l_w[key]-l_old_w[key])
+    Phase 4b: Staleness-aware asynchronous FL aggregation.
 
+    Original rule (uniform):
+        g += (1/N) * (l - l_old)
+
+    Updated rule (staleness-weighted):
+        g += alpha(tau) / N * (l - l_old)
+        where alpha(tau) = 1 / (1 + tau)
+              tau = number of global rounds since vehicle last trained
+
+    tau=0  -> alpha=1.0  (vehicle trained this round, full weight)
+    tau=15 -> alpha=0.063 (standard round-robin gap, moderate discount)
+    tau=30 -> alpha=0.032 (vehicle was skipped once, strong discount)
+
+    This prevents stale vehicles from corrupting the global model with
+    outdated popularity signals in high-mobility vehicular scenarios.
+    """
+    alpha = 1.0 / (1 + staleness)
+    l_w = l.state_dict()
+    g_w = g.state_dict()
+    l_old_w = l_old.state_dict()
+    for key in g_w.keys():
+        g_w[key] += alpha / vehicle_all_num * (l_w[key] - l_old_w[key])
     return g_w
 
 if __name__ == '__main__':

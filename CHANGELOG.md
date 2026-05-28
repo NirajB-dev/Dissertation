@@ -35,6 +35,45 @@ Each entry maps to a git commit and a results file.
 
 ---
 
+## Phase 4b — Staleness-Aware Asynchronous FL Aggregation
+**Status:** Complete
+**Files changed:** `dataset_processing.py`, `ce_cs.py`
+**Builds on:** Phase 4a (both fixes active in this run)
+**Results file:** `results_phase4b.log`
+
+### What changed
+- `asy_average_weights()` now accepts a `staleness` parameter τ
+- Aggregation weight scaled by α(τ) = 1/(1+τ) instead of uniform 1/N
+- `ce_cs.py` tracks `last_trained_round` per vehicle; computes staleness
+  at aggregation time; updates record after each successful training round
+
+### Staleness observed (from log)
+- First cycle (rounds 0–14): α ranged from 1.0 (vehicle 0) to 0.067 (vehicle 14)
+- Steady-state (rounds 15–29): all vehicles τ=15, α=0.0625 (no skipped vehicles)
+- No vehicles were excluded by the staying-time check in this run
+
+### MCAF Cache Hit Rate (%) — cumulative improvement over baseline
+| Cache Size | Baseline | +4a only | +4a+4b | Δ vs Baseline | Δ vs 4a |
+|------------|----------|----------|--------|---------------|---------|
+| 50         | 12.58    | 14.66    | 12.93  | +0.35         | -1.73   |
+| 100        | 20.66    | 22.95    | 22.32  | +1.66         | -0.63   |
+| 150        | 28.95    | 30.43    | 30.60  | +1.65         | +0.17   |
+| 200        | 34.31    | 36.58    | 36.73  | +2.42         | +0.15   |
+| 250        | 39.96    | 41.79    | 42.20  | +2.24         | +0.41   |
+| 300        | 45.25    | 47.51    | 48.78  | +3.53         | +1.27   |
+| 350        | 50.82    | 53.52    | 54.55  | +3.73         | +1.03   |
+| **400**    | **56.25**| **57.55**| **58.31**| **+2.06** | **+0.76** |
+
+### MCAF Request Delay (ms) — cumulative improvement over baseline
+| Cache Size | Baseline | +4a only | +4a+4b | Δ vs Baseline |
+|------------|----------|----------|--------|---------------|
+| 50         | 31.94    | 31.56    | 30.53  | -1.41         |
+| 400        | 22.83    | 22.65    | 21.70  | -1.13         |
+
+**Combined improvement at CS=400: +2.06pp cache hit rate, −1.13ms delay.**
+
+---
+
 ## Phase 4a — FL-Guided Cache Replacement Policy
 **Status:** In progress
 **File changed:** `environment.py`
