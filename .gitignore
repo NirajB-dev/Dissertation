@@ -8,3 +8,11 @@ venv/
 *.npy
 *.mat
 tmp/
+
+# Auto-generated runtime caches (regenerated on first run)
+model/
+user/
+
+# Root-level ml-1m/ is a leftover duplicate from Repo 1.
+# The code reads from data/ml-1m/ — that directory is committed.
+ml-1m/
